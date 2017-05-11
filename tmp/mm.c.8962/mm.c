@@ -49,7 +49,6 @@ team_t team = {
 #define DSIZE       8
 
 #define MAX(x, y)   ((x) > (y)? (x):(y))
-#define MIN(x, y)   ((x) < (y)? (x):(y))
 
 // Pack a size and allocated bit into a word
 #define PACK(size, alloc)   ((size) | (alloc))
@@ -82,9 +81,7 @@ static void *extend_heap(size_t words);
 static void *find_fit(size_t asize);
 static void place(void *bp, size_t asize);
 
-// find chains of my free blocks for the requested size
 static void *find_fit(size_t asize){
-
     void *bp;
 
     for(bp = heap_listp; GET_SIZE(HDRP(bp)) > 0; bp= NEXT_BLKP(bp)){
@@ -95,7 +92,6 @@ static void *find_fit(size_t asize){
     return NULL; // no fit
 }
 
-// 
 static void place(void *bp, size_t asize){
     size_t csize = GET_SIZE(HDRP(bp));
 
@@ -117,19 +113,22 @@ static void *coalesce(void *bp){
     size_t next_alloc = GET_ALLOC(HDRP(NEXT_BLKP(bp)));
     size_t size = GET_SIZE(HDRP(bp));
 
-    if(prev_alloc && !next_alloc){                      // case 1
+    if(prev_alloc && next_alloc){               // case 1
+        return bp;
+    }   
+    else if(prev_alloc && !next_alloc){         // case 2
         size += GET_SIZE(HDRP(NEXT_BLKP(bp)));  
         PUT(HDRP(bp), PACK(size, 0));
         PUT(FTRP(bp), PACK(size, 0));
     }
-    else if(!prev_alloc && next_alloc){                 // case 2
+    else if(!prev_alloc && next_alloc){         // case 3
         size += GET_SIZE(HDRP(PREV_BLKP(bp)));
         PUT(FTRP(bp), PACK(size, 0));
         PUT(HDRP(PREV_BLKP(bp)), PACK(size, 0));
         bp = PREV_BLKP(bp);
 
     }
-    else if(!prev_alloc && !next_alloc){                // case 3
+    else{                                       // case 4
         size += GET_SIZE(HDRP(PREV_BLKP(bp))) + 
             GET_SIZE(FTRP(NEXT_BLKP(bp)));
         PUT(HDRP(PREV_BLKP(bp)), PACK(size, 0));
@@ -272,17 +271,25 @@ void *mm_realloc(void *ptr, size_t size)
 {
     void *oldptr = ptr;
     void *newptr;
-    size_t copySize = ALIGN((size + (2 * WSIZE)));
+    size_t copySize = MAX(ALIGN(size), 24);
     size_t oldsize;
 
 
     // if ptr is NULL, the call is equivalent to mm malloc(size);
     if(ptr == NULL){
-        return mm_malloc(size);
+        return malloc(size);
+    }
+    // if size is equal to zero, the call is equivalent to mm free(ptr);
+    if(size == 0){
+        free(ptr);
     }
 
-
     oldsize = GET_SIZE(HDRP(ptr)); // ptr is not null and 
+
+    //      if the newsize = oldsize, no changes and return old ptr  
+    if(copySize == oldsize){
+        return ptr;
+    }
 
 
     //     if ptr is not NULL, it must have been returned by an earlier call to mm malloc or mm realloc.
@@ -291,20 +298,7 @@ void *mm_realloc(void *ptr, size_t size)
     // new block might be the same as the old block, or it might be different, depending on your implementation,
     // the amount of internal fragmentation in the old block, and the size of the realloc
     // request.
-    if(copySize <= oldsize){
-
-         // if size is equal to zero, the call is equivalent to mm free(ptr);
-
-        if(size == 0){
-            mm_free(ptr);
-            return NULL;
-        }
-
-         // if the newsize = oldsize, no changes and return old ptr  
-        if(copySize == oldsize){
-            return ptr;
-        }
-
+    if(ptr != NULL && (copySize < oldsize)){ //redundant ptr != NULL ???
         size = copySize;
 
 
@@ -323,28 +317,30 @@ void *mm_realloc(void *ptr, size_t size)
         else{
 
             size_t newsize = oldsize - size;
-            
             PUT(HDRP(ptr), PACK(size, 1));      // set occupy bit to true
             PUT(FTRP(ptr), PACK(size, 1));      // set occupy bit to true
             PUT(HDRP(NEXT_BLKP(ptr)), PACK(newsize, 1));
-            mm_free(NEXT_BLKP(ptr));               // free the requested space
+            free(NEXT_BLKP(ptr));               // free the requested space
 
             return ptr;
         }
     }
 
     // allocate my new space that I requested, and return my new pointer
-    newptr = mm_malloc(size);
+    newptr = malloc(size);
 
     if(newptr == NULL){
         return 0;
     }
-    //
+    // 
+    else if(size < oldsize){
+        oldsize = size;
+    }
 
     //return all of the data in old blocks (all of it, only it)
-    memcpy(newptr, ptr, MIN(size, oldsize));
+    memcpy(newptr, ptr, oldsize);
     // using the new address, lets free the old one
-    mm_free(ptr);
+    free(ptr);
 
     // now return my new address
     return newptr;

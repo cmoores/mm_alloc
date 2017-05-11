@@ -1,0 +1,5 @@
+Team Name:Moores_Clayton
+Member 1 :Christopher Moores:cmoores@udel.edu
+Member 2 :Christopher Clayton:chrisbme@udel.edu
+Using default tracefiles in ../../traces/
+Measuring performance with gettimeofday().

@@ -1,13 +1,10 @@
 /*
- * mm-naive.c - The fastest, least memory-efficient malloc package.
- * 
- * In this naive approach, a block is allocated by simply incrementing
- * the brk pointer.  A block is pure payload. There are no headers or
- * footers.  Blocks are never coalesced or reused. Realloc is
- * implemented directly using mm_malloc and mm_free.
- *
- * NOTE TO STUDENTS: Replace this header comment with your own header
- * comment that gives a high level description of your solution.
+Our block alignment follows the standard double word alignment; free blocks are computed on the fly and 
+if they are compatible with block boundaries we add their size as is, else we will multiply the alignment factor
+ (2 * WISE) and then add in the requested space
+
+ Our allocator manipulates free space by utilizing the coalesce and find_fit functions; our reallocation method
+ saves space by reallocating memory of similar sized, recently used requests
  */
 #include <stdio.h>
 #include <stdlib.h>
@@ -74,7 +71,6 @@ team_t team = {
 
 // Global variables
 static char *heap_listp = 0; 
-// static char *free_listp = 0;
 
 // Helper subroutines
 static void *coalesce(void *bp);
@@ -95,7 +91,7 @@ static void *find_fit(size_t asize){
     return NULL; // no fit
 }
 
-// 
+// place a free block at the beginning of the list of asize
 static void place(void *bp, size_t asize){
     size_t csize = GET_SIZE(HDRP(bp));
 
@@ -112,6 +108,8 @@ static void place(void *bp, size_t asize){
     }
 }
 
+// refactors the free list pointers by either insertion or
+// removal of the pointer --> this will return the block pointer
 static void *coalesce(void *bp){
     size_t prev_alloc = GET_ALLOC(FTRP(PREV_BLKP(bp)));
     size_t next_alloc = GET_ALLOC(HDRP(NEXT_BLKP(bp)));
@@ -141,17 +139,13 @@ static void *coalesce(void *bp){
 
 }
 
+// add a free block as requested, then return the coalesced pointer to this block
 static void *extend_heap(size_t words){
     char *bp;
     size_t size;
 
     // Allocate an even number of words to maintain alignment
     size = (words%2) ? (words+1)*WSIZE: words * WSIZE;
-
-
-    // if(size < 16){
-    //     size = 16;         // since header and footer total 8 and payload cannot be zero, min size rounds to 16
-    // }
 
     if((long)(bp=mem_sbrk(size)) == -1){
         return NULL;
@@ -164,19 +158,6 @@ static void *extend_heap(size_t words){
     // Coalesce if the previous block was free
     return coalesce(bp);
 }
-
-
-
-
-// // heap_block struct
-// struct heap_block{
-//   size_t payload;             // size of the payload
-//   struct heap_block* next_free;  // points to the next free block in the heap
-//   struct heap_block* prev_free;  // points to the previous free block in the heap
-// };
-
-// // initialize the heap struct data type 
-// typedef struct heap_block heap_block;
 
 /* 
  * mm_init - initialize the malloc package.
@@ -237,16 +218,6 @@ void *mm_malloc(size_t size)
     }
     place(bp, asize);
     return bp;
-
-
- //    int newsize = ALIGN(size + SIZE_T_SIZE);
- //    void *p = mem_sbrk(newsize);
- //    if (p == (void *)-1)
-	// return NULL;
- //    else {
- //        *(size_t *)p = size;
- //        return (void *)((char *)p + SIZE_T_SIZE);
- //    }
 }
 
 /*
@@ -265,12 +236,23 @@ void mm_free(void *ptr)
     coalesce(ptr);
 }
 
-/*
- * mm_realloc - Implemented simply in terms of mm_malloc and mm_free
+/*  //     if ptr is not NULL, it must have been returned by an earlier call to mm malloc or mm realloc.
+    // The call to mm realloc changes the size of the memory block pointed to by ptr (the old
+    // block) to size bytes and returns the address of the new block. Notice that the address of the
+    // new block might be the same as the old block, or it might be different, depending on your implementation,
+    // the amount of internal fragmentation in the old block, and the size of the realloc
+    // request.
+    //      The contents of the new block are the same as those of the old ptr block, up to the minimum of
+    // the old and new sizes. Everything else is uninitialized. For example, if the old block is 8 bytes
+    // and the new block is 12 bytes, then the first 8 bytes of the new block are identical to the first 8
+    // 2
+    // bytes of the old block and the last 4 bytes are uninitialized. Similarly, if the old block is 8 bytes
+    // and the new block is 4 bytes, then the contents of the new block are identical to the first 4 bytes
+    // of the old block.
  */
 void *mm_realloc(void *ptr, size_t size)
 {
-    void *oldptr = ptr;
+    // void *oldptr = ptr;
     void *newptr;
     size_t copySize = ALIGN((size + (2 * WSIZE)));
     size_t oldsize;
@@ -284,13 +266,6 @@ void *mm_realloc(void *ptr, size_t size)
 
     oldsize = GET_SIZE(HDRP(ptr)); // ptr is not null and 
 
-
-    //     if ptr is not NULL, it must have been returned by an earlier call to mm malloc or mm realloc.
-    // The call to mm realloc changes the size of the memory block pointed to by ptr (the old
-    // block) to size bytes and returns the address of the new block. Notice that the address of the
-    // new block might be the same as the old block, or it might be different, depending on your implementation,
-    // the amount of internal fragmentation in the old block, and the size of the realloc
-    // request.
     if(copySize <= oldsize){
 
          // if size is equal to zero, the call is equivalent to mm free(ptr);
@@ -308,14 +283,6 @@ void *mm_realloc(void *ptr, size_t size)
         size = copySize;
 
 
-    //      The contents of the new block are the same as those of the old ptr block, up to the minimum of
-    // the old and new sizes. Everything else is uninitialized. For example, if the old block is 8 bytes
-    // and the new block is 12 bytes, then the first 8 bytes of the new block are identical to the first 8
-    // 2
-    // bytes of the old block and the last 4 bytes are uninitialized. Similarly, if the old block is 8 bytes
-    // and the new block is 4 bytes, then the contents of the new block are identical to the first 4 bytes
-    // of the old block.
-
         // if there is already room to add block, return the addr of the pointer
         if (oldsize - size <= 24){
             return ptr;
@@ -323,7 +290,7 @@ void *mm_realloc(void *ptr, size_t size)
         else{
 
             size_t newsize = oldsize - size;
-            
+
             PUT(HDRP(ptr), PACK(size, 1));      // set occupy bit to true
             PUT(FTRP(ptr), PACK(size, 1));      // set occupy bit to true
             PUT(HDRP(NEXT_BLKP(ptr)), PACK(newsize, 1));
@@ -339,7 +306,6 @@ void *mm_realloc(void *ptr, size_t size)
     if(newptr == NULL){
         return 0;
     }
-    //
 
     //return all of the data in old blocks (all of it, only it)
     memcpy(newptr, ptr, MIN(size, oldsize));

@@ -221,7 +221,7 @@ void *mm_malloc(size_t size)
 }
 
 /*
- * mm_free - Freeing a block does nothing.
+ * mm_free - frees block and calls coalesce()
  */
 void mm_free(void *ptr)
 {
@@ -315,10 +315,6 @@ void *mm_realloc(void *ptr, size_t size)
     // now return my new address
     return newptr;
 
-}
-
-int mm_check(void){
-    return 0;
 }
 
 
